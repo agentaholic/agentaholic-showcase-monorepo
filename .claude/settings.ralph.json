@@ -1,0 +1,19 @@
+{
+  "env": {
+    "CLAUDE_POST_STOP_ALERT_ENABLED": "false",
+    "AGENTAHOLIC_SHOWCASE_DEV_ENFORCE_SESSION_CHECKS": "false"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ralph-permission-prompt.sh",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

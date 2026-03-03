@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+#
+# get-traces - List request traces from the running Encore app via MCP
+#
+# Usage:
+#   get-traces [options]
+#
+# Options:
+#   --service <name>     Filter by service name
+#   --endpoint <name>    Filter by endpoint name
+#   --error              Show only failed traces
+#   --no-error           Show only successful traces
+#   --limit <n>          Max number of traces to return
+#   --since <timestamp>  ISO timestamp lower bound
+#   --until <timestamp>  ISO timestamp upper bound
+#   --debug              Enable verbose MCP logging to stderr
+#
+# Examples:
+#   get-traces
+#   get-traces --service accounts --limit 5
+#   get-traces --endpoint getStockPrice --error
+#   get-traces --since 2025-01-01T00:00:00Z --until 2025-01-02T00:00:00Z
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+die() {
+  echo "error: $*" >&2
+  exit "${EXIT_CODE:-1}"
+}
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: get-traces [options]
+
+Options:
+  --service <name>     Filter by service name
+  --endpoint <name>    Filter by endpoint name
+  --error              Show only failed traces
+  --no-error           Show only successful traces
+  --limit <n>          Max number of traces to return
+  --since <timestamp>  ISO timestamp lower bound
+  --until <timestamp>  ISO timestamp upper bound
+  --debug              Enable verbose MCP logging to stderr
+
+Examples:
+  get-traces
+  get-traces --service accounts --limit 5
+  get-traces --endpoint getStockPrice --error
+USAGE
+  EXIT_CODE=2 die "invalid arguments"
+}
+
+# --- Parse CLI ---
+
+SERVICE=""
+ENDPOINT=""
+ERROR_FILTER=""
+LIMIT=""
+START_TIME=""
+END_TIME=""
+DEBUG_FLAG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --service)
+      [[ $# -lt 2 ]] && EXIT_CODE=2 die "--service requires a value"
+      SERVICE="$2"
+      shift 2
+      ;;
+    --endpoint)
+      [[ $# -lt 2 ]] && EXIT_CODE=2 die "--endpoint requires a value"
+      ENDPOINT="$2"
+      shift 2
+      ;;
+    --error)
+      ERROR_FILTER="true"
+      shift
+      ;;
+    --no-error)
+      ERROR_FILTER="false"
+      shift
+      ;;
+    --limit)
+      [[ $# -lt 2 ]] && EXIT_CODE=2 die "--limit requires a value"
+      LIMIT="$2"
+      shift 2
+      ;;
+    --since)
+      [[ $# -lt 2 ]] && EXIT_CODE=2 die "--since requires a value"
+      START_TIME="$2"
+      shift 2
+      ;;
+    --until)
+      [[ $# -lt 2 ]] && EXIT_CODE=2 die "--until requires a value"
+      END_TIME="$2"
+      shift 2
+      ;;
+    --debug)
+      DEBUG_FLAG="--debug"
+      shift
+      ;;
+    --help | -h)
+      usage
+      ;;
+    *)
+      EXIT_CODE=2 die "unknown option: $1"
+      ;;
+  esac
+done
+
+# --- Build arguments ---
+
+args="$(
+  jq -cn \
+    --arg service "$SERVICE" \
+    --arg endpoint "$ENDPOINT" \
+    --arg error "$ERROR_FILTER" \
+    --arg limit "$LIMIT" \
+    --arg start_time "$START_TIME" \
+    --arg end_time "$END_TIME" \
+    '{}
+   + (if $service != "" then {service: $service} else {} end)
+   + (if $endpoint != "" then {endpoint: $endpoint} else {} end)
+   + (if $error != "" then {error: $error} else {} end)
+   + (if $limit != "" then {limit: $limit} else {} end)
+   + (if $start_time != "" then {start_time: $start_time} else {} end)
+   + (if $end_time != "" then {end_time: $end_time} else {} end)'
+)"
+
+# --- Call MCP and pretty-print ---
+
+content="$("$SCRIPT_DIR/invoke-encore-mcp-tool" get_traces "$args" $DEBUG_FLAG)"
+
+if echo "$content" | jq empty 2>/dev/null; then
+  echo "$content" | jq .
+else
+  echo "$content"
+fi

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+npm run lint
+AGENTAHOLIC_SHOWCASE_TEST_SKIP_FORMAT=1 ./bin/test.sh

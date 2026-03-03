@@ -1,0 +1,56 @@
+diff --git a/node_modules/axios/lib/core/encoreErrorReporter.js b/node_modules/axios/lib/core/encoreErrorReporter.js
+new file mode 100644
+index 0000000..75f9048
+--- /dev/null
++++ b/node_modules/axios/lib/core/encoreErrorReporter.js
+@@ -0,0 +1,21 @@
++let log = null;
++
++try {
++  if (typeof process !== 'undefined' && process.versions && process.versions.node) {
++    import('encore.dev/log').then((module) => {
++      log = module.default;
++    }).catch(() => {});
++  }
++} catch (e) {}
++
++export function reportAxiosError(response) {
++  if (log) {
++    log.error('axios error', {
++      status: response.status,
++      statusText: response.statusText,
++      method: response.config?.method,
++      url: response.config?.url,
++      data: response.data,
++    });
++  }
++}
+diff --git a/node_modules/axios/lib/core/settle.js b/node_modules/axios/lib/core/settle.js
+index ac905c4..c0fa3b9 100644
+--- a/node_modules/axios/lib/core/settle.js
++++ b/node_modules/axios/lib/core/settle.js
+@@ -1,6 +1,7 @@
+ 'use strict';
+ 
+ import AxiosError from './AxiosError.js';
++import { reportAxiosError } from './encoreErrorReporter.js';
+ 
+ /**
+  * Resolve or reject a Promise based on response status.
+@@ -16,12 +17,14 @@ export default function settle(resolve, reject, response) {
+   if (!response.status || !validateStatus || validateStatus(response.status)) {
+     resolve(response);
+   } else {
+-    reject(new AxiosError(
++    const error = new AxiosError(
+       'Request failed with status code ' + response.status,
+       [AxiosError.ERR_BAD_REQUEST, AxiosError.ERR_BAD_RESPONSE][Math.floor(response.status / 100) - 4],
+       response.config,
+       response.request,
+       response
+-    ));
++    );
++    reportAxiosError(response);
++    reject(error);
+   }
+ }

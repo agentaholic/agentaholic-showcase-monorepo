@@ -1,0 +1,9 @@
+{
+  "name": "@agentaholic-showcase/ticTacToe-aggregates",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "workspace-test.sh src/services/ticTacToe/aggregates"
+  }
+}

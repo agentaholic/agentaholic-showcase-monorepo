@@ -1,0 +1,9 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "semi": false,
+  "singleQuote": true,
+  "endOfLine": "lf",
+  "printWidth": 80,
+  "experimentalSortPackageJson": false,
+  "ignorePatterns": ["src/utils/api/generated/**", ".husky/_/**"]
+}

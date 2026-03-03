@@ -1,0 +1,33 @@
+diff --git a/node_modules/pm2/lib/API.js b/node_modules/pm2/lib/API.js
+index ced8e6f..63599da 100644
+--- a/node_modules/pm2/lib/API.js
++++ b/node_modules/pm2/lib/API.js
+@@ -1058,6 +1058,13 @@ class API {
+           return app.name == proc_name;
+         });
+ 
++        if (apps.some((app) => app.skipRestartWhenOnline)) {
++          if ((proc_list[proc_name].status || proc_list[proc_name].pm2_env.status) === 'online') {
++            apps_name.splice(apps_name.indexOf(proc_name), 1);
++            return next();
++          }
++        }
++
+         var envs = apps.map(function(app){
+           // Binds env_diff to env and returns it.
+           return Common.mergeEnvironmentVariables(app, opts.env, deployConf);
+diff --git a/node_modules/pm2/lib/API/schema.json b/node_modules/pm2/lib/API/schema.json
+index 7debd78..acbbf61 100644
+--- a/node_modules/pm2/lib/API/schema.json
++++ b/node_modules/pm2/lib/API/schema.json
+@@ -371,5 +371,10 @@
+   "io": {
+     "type": "object",
+     "docDescription": "Specify apm values and configuration"
++  },
++  "skipRestartWhenOnline": {
++    "type": "boolean",
++    "docDefault": false,
++    "docDescription": "Don't restart the process when already online"
+   }
+ }

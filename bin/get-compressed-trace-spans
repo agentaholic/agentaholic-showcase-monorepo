@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+get-trace-spans $1 | ./bin/compressTrace.ts | jq ".[\"$1\"]"

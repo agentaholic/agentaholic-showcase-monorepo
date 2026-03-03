@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+#
+# invoke-encore-mcp-tool - Generic client for calling Encore MCP tools over stdio
+#
+# Usage:
+#   invoke-encore-mcp-tool <tool_name> <arguments_json> [--debug]
+#
+# Starts an Encore MCP server as a coprocess, performs the JSON-RPC 2.0
+# handshake, invokes the named tool with the given arguments, and prints
+# the result content to stdout.
+#
+# Environment:
+#   MCP_TIMEOUT  - Max seconds to wait for a response (default: 120)
+#
+# Exit codes:
+#   0  success
+#   3  MCP server failed to start
+#   4  protocol / handshake error
+#   5  tool call error
+#   127 missing dependency (jq, encore)
+
+set -euo pipefail
+
+# --- Constants ---
+TIMEOUT="${MCP_TIMEOUT:-120}"
+REQUEST_ID=0
+
+# --- State ---
+DEBUG=false
+MCP_PID=""
+FIFO_DIR=""
+
+# --- Helpers ---
+
+die() {
+  echo "error: $*" >&2
+  exit "${EXIT_CODE:-1}"
+}
+
+debug() {
+  if $DEBUG; then
+    echo "[debug] $*" >&2
+  fi
+}
+
+next_id() {
+  REQUEST_ID=$((REQUEST_ID + 1))
+}
+
+# --- Preflight ---
+
+preflight_checks() {
+  if ! command -v jq &>/dev/null; then
+    EXIT_CODE=127 die "jq is required but not found in PATH"
+  fi
+  if ! command -v encore &>/dev/null; then
+    EXIT_CODE=127 die "encore is required but not found in PATH"
+  fi
+
+  # cd to project root (directory containing encore.app)
+  local dir
+  dir="$(cd "$(dirname "$0")/.." && pwd)"
+  if [[ ! -f "$dir/encore.app" ]]; then
+    EXIT_CODE=127 die "could not find encore.app in $dir"
+  fi
+  cd "$dir"
+  debug "project root: $dir"
+}
+
+# --- MCP Server Lifecycle ---
+
+cleanup() {
+  if [[ -n "$MCP_PID" ]]; then
+    kill "$MCP_PID" 2>/dev/null || true
+    wait "$MCP_PID" 2>/dev/null || true
+    debug "killed MCP server (pid=$MCP_PID)"
+  fi
+  if [[ -n "$FIFO_DIR" && -d "$FIFO_DIR" ]]; then
+    rm -rf "$FIFO_DIR"
+    debug "cleaned up FIFOs at $FIFO_DIR"
+  fi
+  exec 3>&- 2>/dev/null || true
+  exec 4>&- 2>/dev/null || true
+}
+
+start_mcp_server() {
+  FIFO_DIR="$(mktemp -d)"
+  local fifo_in="$FIFO_DIR/in"
+  local fifo_out="$FIFO_DIR/out"
+  mkfifo "$fifo_in" "$fifo_out"
+
+  encore mcp run <"$fifo_in" >"$fifo_out" 2>/dev/null &
+  MCP_PID=$!
+
+  exec 3>"$fifo_in"
+  exec 4<"$fifo_out"
+
+  if ! kill -0 "$MCP_PID" 2>/dev/null; then
+    EXIT_CODE=3 die "MCP server failed to start"
+  fi
+
+  debug "MCP server started (pid=$MCP_PID)"
+}
+
+# --- MCP Protocol ---
+
+send_message() {
+  local msg="$1"
+  debug ">>> $msg"
+  echo "$msg" >&3
+}
+
+read_response_by_id() {
+  local expected_id="$1"
+  local elapsed=0
+  local line
+
+  while [[ $elapsed -lt $TIMEOUT ]]; do
+    if read -r -t 1 line <&4; then
+      [[ -z "$line" ]] && continue
+
+      debug "<<< $line"
+
+      if ! echo "$line" | jq empty 2>/dev/null; then
+        debug "skipping non-JSON line"
+        continue
+      fi
+
+      local resp_id
+      resp_id="$(echo "$line" | jq -r '.id // empty' 2>/dev/null)"
+
+      if [[ "$resp_id" == "$expected_id" ]]; then
+        echo "$line"
+        return 0
+      fi
+
+      debug "skipping message (id=$resp_id, expected=$expected_id)"
+    else
+      elapsed=$((elapsed + 1))
+    fi
+  done
+
+  EXIT_CODE=4 die "timed out waiting for response id=$expected_id after ${TIMEOUT}s"
+}
+
+mcp_handshake() {
+  next_id
+  local id="$REQUEST_ID"
+
+  local init_req
+  init_req="$(jq -cn --argjson id "$id" '{
+    jsonrpc: "2.0",
+    id: $id,
+    method: "initialize",
+    params: {
+      protocolVersion: "2024-11-05",
+      capabilities: {},
+      clientInfo: { name: "mcp-call", version: "1.0.0" }
+    }
+  }')"
+
+  send_message "$init_req"
+
+  local resp
+  resp="$(read_response_by_id "$id")"
+
+  local err
+  err="$(echo "$resp" | jq -r '.error.message // empty')"
+  if [[ -n "$err" ]]; then
+    EXIT_CODE=4 die "MCP initialize failed: $err"
+  fi
+
+  debug "handshake initialized"
+
+  send_message '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+
+  debug "handshake complete"
+}
+
+# --- Tool Invocation ---
+
+# Calls an MCP tool and prints the raw content text to stdout.
+# Args: $1 = tool name, $2 = arguments JSON object
+mcp_call_tool() {
+  local tool_name="$1"
+  local arguments="$2"
+
+  next_id
+  local id="$REQUEST_ID"
+
+  local req
+  req="$(
+    jq -cn \
+      --argjson id "$id" \
+      --arg tool "$tool_name" \
+      --argjson arguments "$arguments" \
+      '{
+      jsonrpc: "2.0",
+      id: $id,
+      method: "tools/call",
+      params: { name: $tool, arguments: $arguments }
+    }'
+  )"
+
+  send_message "$req"
+
+  local resp
+  resp="$(read_response_by_id "$id")"
+
+  local err
+  err="$(echo "$resp" | jq -r '.error.message // empty')"
+  if [[ -n "$err" ]]; then
+    EXIT_CODE=5 die "tool call failed: $err"
+  fi
+
+  local is_error
+  is_error="$(echo "$resp" | jq -r '.result.isError // false')"
+
+  local content
+  content="$(echo "$resp" | jq -r '.result.content[0].text // empty')"
+
+  if [[ "$is_error" == "true" ]]; then
+    EXIT_CODE=5 die "tool returned error: $content"
+  fi
+
+  if [[ -z "$content" ]]; then
+    EXIT_CODE=5 die "empty response from tool"
+  fi
+
+  echo "$content"
+}
+
+# --- Main ---
+
+main() {
+  local tool_name=""
+  local arguments=""
+
+  # Parse arguments
+  local positional=()
+  for arg in "$@"; do
+    if [[ "$arg" == "--debug" ]]; then
+      DEBUG=true
+    else
+      positional+=("$arg")
+    fi
+  done
+
+  if [[ ${#positional[@]} -lt 2 ]]; then
+    cat >&2 <<'USAGE'
+Usage: invoke-encore-mcp-tool <tool_name> <arguments_json> [--debug]
+
+Starts an Encore MCP server, performs the handshake, and calls the
+named tool with the given JSON arguments. Prints the result to stdout.
+
+Examples:
+  invoke-encore-mcp-tool call_endpoint '{"service":"scans","endpoint":"checkHealth","method":"GET","path":"scans.checkHealth"}'
+  invoke-encore-mcp-tool get_services '{}' --debug
+USAGE
+    EXIT_CODE=2 die "missing required arguments"
+  fi
+
+  tool_name="${positional[0]}"
+  arguments="${positional[1]}"
+
+  # Validate arguments is valid JSON
+  if ! echo "$arguments" | jq empty 2>/dev/null; then
+    EXIT_CODE=2 die "arguments must be valid JSON: $arguments"
+  fi
+
+  trap cleanup EXIT
+  preflight_checks
+  start_mcp_server
+  mcp_handshake
+  mcp_call_tool "$tool_name" "$arguments"
+}
+
+main "$@"

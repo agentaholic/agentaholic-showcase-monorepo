@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+npx lint-staged
+npm run lint
+
+# run encore check prior to testing to ensure encore types are up to date
+./bin/updateGeneratedApiClient.sh
+git add src/utils/api/generated/ApiClient.ts
+
+AGENTAHOLIC_SHOWCASE_TEST_SKIP_FORMAT=1 ./bin/test.sh

@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+#
+# call-api-endpoint - Call Encore API endpoints via MCP server
+#
+# Usage:
+#   call-api-endpoint <service.endpoint> [options]
+#
+# Options:
+#   --payload <json|->   JSON payload (use - to read from stdin)
+#   --method <METHOD>    HTTP method (GET, POST, etc.)
+#   --path <path>        API request path
+#   --auth-token <tok>   Authentication token
+#   --auth-payload <json> Authentication payload JSON
+#   --debug              Enable verbose logging to stderr
+#
+# Examples:
+#   call-api-endpoint stockPriceChecker.getStockPrice --payload '{"ticker":"NVDA"}'
+#   call-api-endpoint accounts.getAccount --payload '{"id": "abc123"}' --path 'accounts/abc123'
+#   echo '{"id": "abc"}' | call-api-endpoint accounts.getAccount --payload -
+#   call-api-endpoint scans.checkHealth --debug
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+die() {
+  echo "error: $*" >&2
+  exit "${EXIT_CODE:-1}"
+}
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: call-api-endpoint <service.endpoint> [options]
+
+Options:
+  --payload <json|->     JSON payload (use - to read from stdin)
+  --method <METHOD>      HTTP method (GET, POST, etc.)
+  --path <path>          API request path
+  --auth-token <token>   Authentication token
+  --auth-payload <json>  Authentication payload JSON
+  --debug                Enable verbose logging to stderr
+
+Examples:
+  call-api-endpoint stockPriceChecker.getStockPrice --payload '{"ticker":"NVDA"}'
+  call-api-endpoint accounts.getAccount --payload '{"id": "abc123"}' --path 'accounts/abc123'
+  echo '{"id": "abc"}' | call-api-endpoint accounts.getAccount --payload -
+USAGE
+  EXIT_CODE=2 die "invalid arguments"
+}
+
+# --- Parse CLI ---
+
+if [[ $# -lt 1 ]]; then
+  usage
+fi
+
+SERVICE=""
+ENDPOINT=""
+PAYLOAD=""
+METHOD=""
+PATH_ARG=""
+AUTH_TOKEN=""
+AUTH_PAYLOAD=""
+DEBUG_FLAG=""
+
+# First positional argument: service.endpoint
+target="$1"
+shift
+
+if [[ "$target" != *.* ]]; then
+  EXIT_CODE=2 die "target must be in format 'service.endpoint', got: $target"
+fi
+
+SERVICE="${target%%.*}"
+ENDPOINT="${target#*.}"
+
+if [[ -z "$SERVICE" || -z "$ENDPOINT" ]]; then
+  EXIT_CODE=2 die "could not parse service and endpoint from: $target"
+fi
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --payload)
+      [[ $# -lt 2 ]] && EXIT_CODE=2 die "--payload requires a value"
+      if [[ "$2" == "-" ]]; then
+        PAYLOAD="$(cat)"
+      else
+        PAYLOAD="$2"
+      fi
+      shift 2
+      ;;
+    --method)
+      [[ $# -lt 2 ]] && EXIT_CODE=2 die "--method requires a value"
+      METHOD="$2"
+      shift 2
+      ;;
+    --path)
+      [[ $# -lt 2 ]] && EXIT_CODE=2 die "--path requires a value"
+      PATH_ARG="$2"
+      shift 2
+      ;;
+    --auth-token)
+      [[ $# -lt 2 ]] && EXIT_CODE=2 die "--auth-token requires a value"
+      AUTH_TOKEN="$2"
+      shift 2
+      ;;
+    --auth-payload)
+      [[ $# -lt 2 ]] && EXIT_CODE=2 die "--auth-payload requires a value"
+      AUTH_PAYLOAD="$2"
+      shift 2
+      ;;
+    --debug)
+      DEBUG_FLAG="--debug"
+      shift
+      ;;
+    *)
+      EXIT_CODE=2 die "unknown option: $1"
+      ;;
+  esac
+done
+
+# --- Validate ---
+
+if [[ -n "$PAYLOAD" ]]; then
+  if ! echo "$PAYLOAD" | jq empty 2>/dev/null; then
+    EXIT_CODE=2 die "payload is not valid JSON: $PAYLOAD"
+  fi
+fi
+
+if [[ -n "$AUTH_PAYLOAD" ]]; then
+  if ! echo "$AUTH_PAYLOAD" | jq empty 2>/dev/null; then
+    EXIT_CODE=2 die "auth-payload is not valid JSON: $AUTH_PAYLOAD"
+  fi
+fi
+
+# --- Defaults ---
+
+if [[ -z "$METHOD" ]]; then
+  METHOD="POST"
+fi
+
+if [[ -z "$PATH_ARG" ]]; then
+  PATH_ARG="${SERVICE}.${ENDPOINT}"
+fi
+
+# --- Build call_endpoint arguments ---
+
+args="$(
+  jq -cn \
+    --arg service "$SERVICE" \
+    --arg endpoint "$ENDPOINT" \
+    --arg payload "$PAYLOAD" \
+    --arg method "$METHOD" \
+    --arg path "$PATH_ARG" \
+    --arg auth_token "$AUTH_TOKEN" \
+    --arg auth_payload "$AUTH_PAYLOAD" \
+    '{service: $service, endpoint: $endpoint, method: $method, path: $path}
+   + (if $payload != "" then {payload: $payload} else {} end)
+   + (if $auth_token != "" then {auth_token: $auth_token} else {} end)
+   + (if $auth_payload != "" then {auth_payload: $auth_payload} else {} end)'
+)"
+
+# --- Call MCP and post-process output ---
+
+content="$("$SCRIPT_DIR/invoke-encore-mcp-tool" call_endpoint "$args" $DEBUG_FLAG)"
+
+# If the content is a JSON object with a base64-encoded "body" field,
+# decode the body and replace it inline for human-readable output
+if echo "$content" | jq -e '.body' &>/dev/null; then
+  body_b64="$(echo "$content" | jq -r '.body')"
+  decoded="$(echo "$body_b64" | base64 -d 2>/dev/null)" || decoded=""
+
+  if [[ -n "$decoded" ]]; then
+    if echo "$decoded" | jq empty 2>/dev/null; then
+      content="$(echo "$content" | jq --argjson body "$(echo "$decoded" | jq -c .)" '.body = $body')"
+    else
+      content="$(echo "$content" | jq --arg body "$decoded" '.body = $body')"
+    fi
+  fi
+fi
+
+# Check status code
+if echo "$content" | jq -e '.status_code' &>/dev/null; then
+  status_code="$(echo "$content" | jq -r '.status_code')"
+  if [[ "$status_code" != "200" ]]; then
+    echo "$content" | jq . >&2
+    exit 1
+  fi
+fi
+
+# Pretty-print if it's JSON, otherwise output as-is
+if echo "$content" | jq empty 2>/dev/null; then
+  echo "$content" | jq .
+else
+  echo "$content"
+fi

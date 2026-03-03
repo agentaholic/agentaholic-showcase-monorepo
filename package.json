@@ -1,0 +1,110 @@
+{
+  "name": "agentaholic-showcase-monorepo",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "sdks/*",
+    "src/app/components",
+    "src/databases/surreal/projectionWriter",
+    "src/services/events/api",
+    "src/services/events/database",
+    "src/services/events/types",
+    "src/services/events/utils",
+    "src/services/hangman/aggregates",
+    "src/services/hangman/api",
+    "src/services/hangman/features",
+    "src/services/hangman/utils",
+    "src/services/ticTacToe/aggregates",
+    "src/services/ticTacToe/api",
+    "src/services/ticTacToe/features",
+    "src/services/ticTacToe/utils",
+    "src/utils/id",
+    "src/utils/projection",
+    "src/utils/testing",
+    "src/utils/url"
+  ],
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "test": "./bin/test.sh",
+    "test:watch": "vitest --watch",
+    "lint": "turbo run lint:base",
+    "lint:base": "oxlint --type-aware",
+    "format": "turbo run format:base",
+    "format:base": "oxfmt --write . && shfmt -w -i 2 -ci bin/ && oxlint --type-aware --fix .",
+    "prepare": "husky",
+    "postinstall": "patch-package && ./bin/setup-direnv.sh"
+  },
+  "dependencies": {
+    "@surrealdb/node": "^1.0.0-beta.3",
+    "@tanstack/react-query": "^5.87.1",
+    "@types/debug": "^4.1.12",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^19.1.11",
+    "@types/react-dom": "^19.1.7",
+    "axios": "^1.13.2",
+    "debug": "^4.4.3",
+    "encore.dev": "^1.54.0",
+    "framer-motion": "^12.23.12",
+    "immer": "^10.1.3",
+    "motion": "^12.23.16",
+    "ox": "^0.9.9",
+    "pg": "^8.16.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-hook-form": "^7.63.0",
+    "react-icons": "^5.5.0",
+    "react-router": "^7.8.2",
+    "short-uuid": "^5.2.0",
+    "surrealdb": "^1.3.2",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.8.0",
+    "@testing-library/react": "^16.3.0",
+    "@types/debug": "^4.1.12",
+    "@types/node": "^20.19.19",
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.4.21",
+    "axios-mock-adapter": "^2.1.0",
+    "happy-dom": "^18.0.1",
+    "husky": "^9.1.7",
+    "hygen": "^6.2.11",
+    "jsdom": "^26.1.0",
+    "lint-staged": "^16.1.2",
+    "oxfmt": "^0.34.0",
+    "oxlint": "^1.49.0",
+    "oxlint-tsgolint": "^0.14.2",
+    "patch-package": "^8.0.0",
+    "pm2": "^6.0.10",
+    "postcss": "^8.5.6",
+    "react-error-boundary": "^6.0.0",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.20.3",
+    "turbo": "^2.5.6",
+    "typescript": "^5.0.0",
+    "vite": "^6.3.5",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.2.3"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.13.0"
+  },
+  "lint-staged": {
+    "*.{mjs,cjs,js,jsx,ts,tsx}": [
+      "oxfmt --write",
+      "oxlint --fix"
+    ],
+    "*.{json,jsonc,css,scss,less,md,mdx,html,yaml,yml,toml,graphql,vue}": [
+      "oxfmt --write"
+    ],
+    "*.sh": [
+      "shfmt -w -i 2 -ci"
+    ]
+  },
+  "packageManager": "npm@10.9.2"
+}

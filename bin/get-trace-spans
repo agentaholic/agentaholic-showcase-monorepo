@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+#
+# get-trace-spans - Retrieve detailed trace spans from the running Encore app via MCP
+#
+# Usage:
+#   get-trace-spans <trace_id> [trace_id...] [--debug]
+#
+# Arguments:
+#   trace_id             One or more trace IDs to retrieve spans for
+#
+# Options:
+#   --debug              Enable verbose MCP logging to stderr
+#
+# Examples:
+#   get-trace-spans abc123
+#   get-trace-spans abc123 def456 ghi789
+#   get-trace-spans abc123 --debug
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+die() {
+  echo "error: $*" >&2
+  exit "${EXIT_CODE:-1}"
+}
+
+# --- Parse CLI ---
+
+TRACE_IDS=()
+DEBUG_FLAG=""
+
+for arg in "$@"; do
+  case "$arg" in
+    --debug)
+      DEBUG_FLAG="--debug"
+      ;;
+    --help | -h)
+      cat >&2 <<'USAGE'
+Usage: get-trace-spans <trace_id> [trace_id...] [--debug]
+
+Retrieves detailed span information for one or more traces, including
+timing, status, and associated metadata.
+
+Examples:
+  get-trace-spans abc123
+  get-trace-spans abc123 def456 ghi789
+  get-trace-spans abc123 --debug
+USAGE
+      EXIT_CODE=2 die "see usage above"
+      ;;
+    -*)
+      EXIT_CODE=2 die "unknown option: $arg"
+      ;;
+    *)
+      TRACE_IDS+=("$arg")
+      ;;
+  esac
+done
+
+if [[ ${#TRACE_IDS[@]} -eq 0 ]]; then
+  EXIT_CODE=2 die "at least one trace_id is required"
+fi
+
+# --- Build arguments ---
+
+# Build a JSON array of trace IDs
+trace_ids_json="$(printf '%s\n' "${TRACE_IDS[@]}" | jq -R . | jq -sc .)"
+args="$(jq -cn --argjson trace_ids "$trace_ids_json" '{trace_ids: $trace_ids}')"
+
+# --- Call MCP and pretty-print ---
+
+content="$("$SCRIPT_DIR/invoke-encore-mcp-tool" get_trace_spans "$args" $DEBUG_FLAG)"
+
+if echo "$content" | jq empty 2>/dev/null; then
+  echo "$content" | jq .
+else
+  echo "$content"
+fi

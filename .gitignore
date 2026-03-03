@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+*.lcov
+
+# Encore
+.encore
+encore.gen.go
+encore.gen.cue
+/.encore
+/encore.gen
+
+# Claude
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/ralph-session-id
+.claude-post-stop.local.sh
+
+# Artifacts cache
+.artifacts/
+
+# direnv artifacts
+.direnv
+
+# pm2 artifacts
+.pm2
+
+# Turbo
+.turbo
+
+# direnv local config
+.envrc.local
+
+# serena Claude MCP server
+# https://github.com/oraios/serena
+.serena/cache
+
+cache/

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "dependsOn": ["@agentaholic-showcase/events-types#test"],
+      "inputs": ["**/*.ts"],
+      "passThroughEnv": [
+        "CI",
+        "ENCORE_LOG",
+        "ENCORE_RUNTIME_LIB",
+        "ENCORE_APP_META",
+        "ENCORE_APP_META_PATH",
+        "ENCORE_RUNTIME_CONFIG",
+        "ENCORE_APP_SECRETS",
+        "ENCORE_LOG_LEVEL",
+        "AGENTAHOLIC_SHOWCASE_MONOREPO_ROOT_PATH",
+        "AGENTAHOLIC_SHOWCASE_TEST_LOCK_HELD"
+      ]
+    }
+  }
+}

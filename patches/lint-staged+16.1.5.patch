@@ -1,0 +1,235 @@
+diff --git a/node_modules/lint-staged/bin/lint-staged.js b/node_modules/lint-staged/bin/lint-staged.js
+index b93e5fe..82d5f57 100755
+--- a/node_modules/lint-staged/bin/lint-staged.js
++++ b/node_modules/lint-staged/bin/lint-staged.js
+@@ -58,6 +58,12 @@ program.option(
+   'override the default "--diff-filter=ACMR" flag of "git diff" to get list of files'
+ )
+ 
++program.option(
++  '--include-unstaged',
++  'include unstaged and untracked files in addition to staged files',
++  false
++)
++
+ program.option('--max-arg-length [number]', 'maximum length of the command-line argument string', 0)
+ 
+ /**
+@@ -120,6 +126,7 @@ const options = {
+   debug: !!cliOptions.debug,
+   diff: cliOptions.diff,
+   diffFilter: cliOptions.diffFilter,
++  includeUnstaged: !!cliOptions.includeUnstaged,
+   maxArgLength: cliOptions.maxArgLength || undefined,
+   quiet: !!cliOptions.quiet,
+   relative: !!cliOptions.relative,
+diff --git a/node_modules/lint-staged/lib/getDiffCommand.js b/node_modules/lint-staged/lib/getDiffCommand.js
+index f251022..d14d996 100644
+--- a/node_modules/lint-staged/lib/getDiffCommand.js
++++ b/node_modules/lint-staged/lib/getDiffCommand.js
+@@ -1,13 +1,24 @@
+-/** @type {(diff?: string, diffFilter?: string) => string[]} */
+-export const getDiffCommand = (diff, diffFilter) => {
++/** @type {(diff?: string, diffFilter?: string, includeUnstaged?: boolean) => string[]} */
++export const getDiffCommand = (diff, diffFilter, includeUnstaged) => {
+   /**
+    *  Docs for --diff-filter option:
+    * @see https://git-scm.com/docs/git-diff#Documentation/git-diff.txt---diff-filterACDMRTUXB82308203
+    */
+   const diffFilterArg = diffFilter !== undefined ? diffFilter.trim() : 'ACMR'
+ 
+-  /** Use `--diff branch1...branch2` or `--diff="branch1 branch2", or fall back to default staged files */
+-  const diffArgs = diff !== undefined ? diff.trim().split(' ') : ['--staged']
++  /**
++   * Use `--diff branch1...branch2` or `--diff="branch1 branch2"
++   * If includeUnstaged is true, compare against HEAD to get both staged and unstaged changes
++   * Otherwise fall back to default staged files only
++   */
++  let diffArgs
++  if (diff !== undefined) {
++    diffArgs = diff.trim().split(' ')
++  } else if (includeUnstaged) {
++    diffArgs = ['HEAD']
++  } else {
++    diffArgs = ['--staged']
++  }
+ 
+   /**
+    * Docs for -z option:
+diff --git a/node_modules/lint-staged/lib/getStagedFiles.js b/node_modules/lint-staged/lib/getStagedFiles.js
+index ec9066f..ca877d1 100644
+--- a/node_modules/lint-staged/lib/getStagedFiles.js
++++ b/node_modules/lint-staged/lib/getStagedFiles.js
+@@ -13,9 +13,10 @@ import { parseGitZOutput } from './parseGitZOutput.js'
+  * @param {string} [args.cwd]
+  * @param {string} [args.diff]
+  * @param {string} [args.diffFilter]
++ * @param {boolean} [args.includeUnstaged]
+  * @retuns {Promise<StagedFile[] | null>}
+  */
+-export const getStagedFiles = async ({ cwd = process.cwd(), diff, diffFilter } = {}) => {
++export const getStagedFiles = async ({ cwd = process.cwd(), diff, diffFilter, includeUnstaged } = {}) => {
+   try {
+     /**
+      * With the raw output lines look like:
+@@ -25,7 +26,7 @@ export const getStagedFiles = async ({ cwd = process.cwd(), diff, diffFilter } =
+      *
+      * @see https://git-scm.com/docs/git-diff#_raw_output_format
+      */
+-    const output = await execGit([...getDiffCommand(diff, diffFilter), '--raw', '-z'], { cwd })
++    const output = await execGit([...getDiffCommand(diff, diffFilter, includeUnstaged), '--raw', '-z'], { cwd })
+ 
+     if (!output) return []
+ 
+@@ -40,7 +41,7 @@ export const getStagedFiles = async ({ cwd = process.cwd(), diff, diffFilter } =
+      * part from space. This yields us enough info both filter out submodule
+      * roots and get the filename.
+      */
+-    return output
++    const stagedFiles = output
+       .slice(1)
+       .split('\u0000:')
+       .map(parseGitZOutput)
+@@ -80,6 +81,36 @@ export const getStagedFiles = async ({ cwd = process.cwd(), diff, diffFilter } =
+           },
+         ]
+       })
++
++    /**
++     * When includeUnstaged is true, also get untracked files
++     * These are files that have never been added to git
++     */
++    if (includeUnstaged) {
++      try {
++        const untrackedOutput = await execGit(
++          ['ls-files', '--others', '--exclude-standard', '-z'],
++          { cwd }
++        )
++
++        if (untrackedOutput) {
++          const untrackedFiles = untrackedOutput
++            .split('\u0000')
++            .filter(file => file.length > 0)
++            .map(filename => ({
++              filepath: normalizePath(path.resolve(cwd, filename)),
++              status: 'A', // Treat untracked files as "Added"
++            }))
++
++          return [...stagedFiles, ...untrackedFiles]
++        }
++      } catch {
++        // If getting untracked files fails, just return the staged files
++        return stagedFiles
++      }
++    }
++
++    return stagedFiles
+   } catch {
+     return null
+   }
+diff --git a/node_modules/lint-staged/lib/gitWorkflow.js b/node_modules/lint-staged/lib/gitWorkflow.js
+index 1e3c4cc..4364ce8 100644
+--- a/node_modules/lint-staged/lib/gitWorkflow.js
++++ b/node_modules/lint-staged/lib/gitWorkflow.js
+@@ -71,7 +71,7 @@ export class GitWorkflow {
+    * @param {Object} opts
+    * @param {import('./getStagedFiles.js').StagedFile[][]} opts.matchedFileChunks
+    */
+-  constructor({ allowEmpty, gitConfigDir, topLevelDir, matchedFileChunks, diff, diffFilter }) {
++  constructor({ allowEmpty, gitConfigDir, topLevelDir, matchedFileChunks, diff, diffFilter, includeUnstaged }) {
+     this.execGit = (args, options = {}) => execGit(args, { ...options, cwd: topLevelDir })
+     this.deletedFiles = []
+     this.gitConfigDir = gitConfigDir
+@@ -79,6 +79,7 @@ export class GitWorkflow {
+     this.diff = diff
+     this.diffFilter = diffFilter
+     this.allowEmpty = allowEmpty
++    this.includeUnstaged = includeUnstaged
+     /** @type {import('./getStagedFiles.js').StagedFile[][]} */
+     this.matchedFileChunks = matchedFileChunks
+ 
+@@ -273,6 +274,13 @@ export class GitWorkflow {
+    * In case of a merge-conflict retry with 3-way merge.
+    */
+   async applyModifications(ctx) {
++    // When --include-unstaged is used, skip auto-staging files
++    // This allows running tasks on all files without updating the git stage
++    if (this.includeUnstaged) {
++      debugLog('Skipping automatic staging because --include-unstaged is enabled')
++      return
++    }
++
+     debugLog('Adding task modifications to index...')
+ 
+     // `matchedFileChunks` includes staged files that lint-staged originally detected and matched against a task.
+diff --git a/node_modules/lint-staged/lib/index.js b/node_modules/lint-staged/lib/index.js
+index bf61621..89c309b 100644
+--- a/node_modules/lint-staged/lib/index.js
++++ b/node_modules/lint-staged/lib/index.js
+@@ -56,8 +56,9 @@ const getMaxArgLength = () => {
+  * @param {boolean} [options.debug] - Enable debug mode
+  * @param {string} [options.diff] - Override the default "--staged" flag of "git diff" to get list of files
+  * @param {string} [options.diffFilter] - Override the default "--diff-filter=ACMR" flag of "git diff" to get list of files
++ * @param {boolean} [options.includeUnstaged] - Include unstaged and untracked files in addition to staged files
+  * @param {number} [options.maxArgLength] - Maximum argument string length
+- * @param {boolean} [options.quiet] - Disable lint-staged’s own console output
++ * @param {boolean} [options.quiet] - Disable lint-staged's own console output
+  * @param {boolean} [options.relative] - Pass relative filepaths to tasks
+  * @param {boolean} [options.revert] - revert to original state in case of errors
+  * @param {boolean} [options.stash] - Enable the backup stash, and revert in case of errors
+@@ -76,6 +77,7 @@ const lintStaged = async (
+     debug = false,
+     diff,
+     diffFilter,
++    includeUnstaged = false,
+     maxArgLength = getMaxArgLength() / 2,
+     quiet = false,
+     relative = false,
+@@ -112,6 +114,7 @@ const lintStaged = async (
+     debug,
+     diff,
+     diffFilter,
++    includeUnstaged,
+     maxArgLength,
+     quiet,
+     relative,
+diff --git a/node_modules/lint-staged/lib/runAll.js b/node_modules/lint-staged/lib/runAll.js
+index 145cb3f..ca89fde 100644
+--- a/node_modules/lint-staged/lib/runAll.js
++++ b/node_modules/lint-staged/lib/runAll.js
+@@ -61,8 +61,9 @@ const createError = (ctx, cause) =>
+  * @param {boolean} [options.debug] - Enable debug mode
+  * @param {string} [options.diff] - Override the default "--staged" flag of "git diff" to get list of files
+  * @param {string} [options.diffFilter] - Override the default "--diff-filter=ACMR" flag of "git diff" to get list of files
++ * @param {boolean} [options.includeUnstaged] - Include unstaged and untracked files in addition to staged files
+  * @param {number} [options.maxArgLength] - Maximum argument string length
+- * @param {boolean} [options.quiet] - Disable lint-staged’s own console output
++ * @param {boolean} [options.quiet] - Disable lint-staged's own console output
+  * @param {boolean} [options.relative] - Pass relative filepaths to tasks
+  * @param {boolean} [options.revert] - revert to original state in case of errors
+  * @param {boolean} [options.stash] - Enable the backup stash, and revert in case of errors
+@@ -80,6 +81,7 @@ export const runAll = async (
+     debug = false,
+     diff,
+     diffFilter,
++    includeUnstaged = false,
+     maxArgLength,
+     quiet = false,
+     relative = false,
+@@ -126,7 +128,7 @@ export const runAll = async (
+     logger.warn(SKIPPING_HIDE_PARTIALLY_CHANGED)
+   }
+ 
+-  const stagedFiles = await getStagedFiles({ cwd: topLevelDir, diff, diffFilter })
++  const stagedFiles = await getStagedFiles({ cwd: topLevelDir, diff, diffFilter, includeUnstaged })
+   if (!stagedFiles) {
+     if (!quiet) ctx.output.push(FAILED_GET_STAGED_FILES)
+     ctx.errors.add(GetStagedFilesError)
+@@ -300,6 +302,7 @@ export const runAll = async (
+     matchedFileChunks,
+     diff,
+     diffFilter,
++    includeUnstaged,
+   })
+ 
+   const runner = new Listr(

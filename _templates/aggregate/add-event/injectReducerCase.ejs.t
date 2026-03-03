@@ -1,0 +1,7 @@
+---
+to: src/services/<%= serviceName %>/aggregates/<%= aggregateName %>/<%= h.changeCase.camel(aggregateName) %>AggregateReducer.ts
+inject: true
+before: '    // DO NOT DELETE THIS LINE: this comment indicates where hygen will insert new event handlers'
+---
+    case '<%= eventName %>':
+      return on<%= eventName %>(aggregate, event) 

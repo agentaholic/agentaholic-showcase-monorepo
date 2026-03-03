@@ -1,0 +1,45 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": [
+    "AGENTAHOLIC_SHOWCASE_MONOREPO_ROOT_PATH",
+    "AGENTAHOLIC_SHOWCASE_TEST_LOCK_HELD",
+    "AGENTAHOLIC_SHOWCASE_WORKSPACE_TEST",
+    "AGENTAHOLIC_SHOWCASE_SINGLE_WORKSPACE_PATH",
+    "ENCORE_LOG",
+    "ENCORE_LOG_LEVEL",
+    "ENCORE_RUNTIME_LOG",
+    "ENCORE_RUNTIME_LIB",
+    "ENCORE_RUNTIME_CONFIG",
+    "ENCORE_RUNTIME_CONFIG_PATH",
+    "ENCORE_APP_META",
+    "ENCORE_APP_META_PATH",
+    "ENCORE_APP_SECRETS",
+    "DEBUG"
+  ],
+  "globalEnv": ["!VITE_*"],
+  "globalDependencies": ["package.json", "package-lock.json"],
+  "tasks": {
+    "//#lint:base": {
+      "inputs": [
+        "src/**/*.{ts,tsx,js,jsx}",
+        "bin/**/*.{ts,tsx,js,jsx}",
+        ".oxlintrc.json",
+        "tsconfig.json"
+      ],
+      "outputs": [],
+      "env": ["!VITE_*"]
+    },
+    "//#format:base": {
+      "inputs": [
+        "src/**/*.{ts,tsx,js,cjs,mjs,json,md,html,sh}",
+        "bin/**/*.sh",
+        "bin/*",
+        "_templates/**",
+        "*.{ts,js,cjs,mjs,json,md}",
+        ".oxfmtrc.json",
+        "*.{cjs,mjs,js,json}"
+      ],
+      "env": ["!VITE_*"]
+    }
+  }
+}

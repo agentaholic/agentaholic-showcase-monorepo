@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+set -e
+
+proc_name=$1
+shift
+
+execution_mode=attach
+
+if [ "$AGENtaHOLIC_SHOWCASE_RUNTIME_USE_PM2" = "false" ]; then
+  execution_mode=raw
+fi
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -d | --detach)
+      export execution_mode=detach
+      shift
+      ;;
+
+    stop)
+      pm2 stop $proc_name
+      exit
+      ;;
+
+    restart)
+      pm2 stop $proc_name
+      export execution_mode=detach
+      shift
+      ;;
+
+    logs)
+      pm2 logs --raw --lines 1000 $proc_name
+      exit
+      ;;
+
+    *)
+      remaining="$remaining $1"
+      shift
+      ;;
+  esac
+done
+
+if [ -n "$remaining" ]; then
+  # Remove leading space from remaining
+  remaining="${remaining# }"
+fi
+
+case "$execution_mode" in
+  attach)
+    cleanup() {
+      pm2 stop $proc_name
+    }
+
+    trap "cleanup" EXIT
+    PM2_ARGS="$remaining" pm2 start --only $proc_name $AGENTAHOLIC_SHOWCASE_MONOREPO_ROOT_PATH/ecosystem.config.cjs
+    pm2 logs --raw $proc_name
+    ;;
+  detach)
+    PM2_ARGS="$remaining" pm2 start --only $proc_name $AGENTAHOLIC_SHOWCASE_MONOREPO_ROOT_PATH/ecosystem.config.cjs
+    ;;
+  raw)
+    $proc_name.sh $remaining
+    ;;
+esac
