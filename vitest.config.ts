@@ -24,6 +24,8 @@ export default defineConfig({
       'src/services/hangman/features/**/*.test.ts',
       'src/services/connectFour/aggregates/**/*.test.ts',
       'src/services/connectFour/utils/**/*.test.ts',
+      'src/services/connectFour/api/**/*.test.ts',
+      'src/services/connectFour/features/**/*.test.ts',
     ],
   },
 })

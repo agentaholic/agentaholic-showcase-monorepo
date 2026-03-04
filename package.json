@@ -8,6 +8,8 @@
     "src/app/components",
     "src/databases/surreal/projectionWriter",
     "src/services/connectFour/aggregates",
+    "src/services/connectFour/api",
+    "src/services/connectFour/features",
     "src/services/connectFour/utils",
     "src/services/events/api",
     "src/services/events/database",
