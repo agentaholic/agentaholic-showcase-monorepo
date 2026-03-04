@@ -5,8 +5,9 @@ import { BrowserRouter, Route, Routes } from 'react-router'
 import { App } from '~src/app/App'
 import { ErrorBoundary } from '~src/app/components/ErrorBoundary'
 import '~src/index.css'
-import { TicTacToePage } from '../services/ticTacToe/pages/TicTacToePage'
+import { TicTacToePage } from '~src/services/ticTacToe/pages/TicTacToePage'
 import { HangmanPage } from '~src/services/hangman/pages/HangmanPage'
+import { ConnectFourPage } from '~src/services/connectFour/pages/ConnectFourPage'
 
 const rootElement = document.getElementById('root')
 
@@ -26,6 +27,11 @@ if (rootElement) {
                   />
                   <Route path="/hangman" element={<HangmanPage />} />
                   <Route path="/hangman/:roundId" element={<HangmanPage />} />
+                  <Route path="/connect-four" element={<ConnectFourPage />} />
+                  <Route
+                    path="/connect-four/:gameId"
+                    element={<ConnectFourPage />}
+                  />
                 </>
               </Routes>
             }

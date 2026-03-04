@@ -33,6 +33,7 @@ const BROWSER = typeof globalThis === "object" && ("window" in globalThis);
  * Client is an API client for the 74pmo Encore application.
  */
 export default class Client {
+    public readonly connectFour: connectFour.ServiceClient
     public readonly errorReports: errorReports.ServiceClient
     public readonly hangman: hangman.ServiceClient
     public readonly ticTacToe: ticTacToe.ServiceClient
@@ -50,6 +51,7 @@ export default class Client {
         this.target = target
         this.options = options ?? {}
         const base = new BaseClient(this.target, this.options)
+        this.connectFour = new connectFour.ServiceClient(base)
         this.errorReports = new errorReports.ServiceClient(base)
         this.hangman = new hangman.ServiceClient(base)
         this.ticTacToe = new ticTacToe.ServiceClient(base)
@@ -81,6 +83,72 @@ export interface ClientOptions {
 
     /** Default RequestInit to be used for the client */
     requestInit?: Omit<RequestInit, "headers"> & { headers?: Record<string, string> }
+}
+
+/**
+ * Import the endpoint handlers to derive the types for the client.
+ */
+import { createGame as api_connectFour_createGame_createGame } from "~backend/src/services/connectFour/api/createGame";
+import { dropDisc as api_connectFour_dropDisc_dropDisc } from "~backend/src/services/connectFour/api/dropDisc";
+import { getGame as api_connectFour_getGame_getGame } from "~backend/src/services/connectFour/api/getGame";
+
+export namespace connectFour {
+
+    export class ServiceClient {
+        private baseClient: BaseClient
+
+        constructor(baseClient: BaseClient) {
+            this.baseClient = baseClient
+            this.createGame = this.createGame.bind(this)
+            this.dropDisc = this.dropDisc.bind(this)
+            this.getGame = this.getGame.bind(this)
+        }
+
+        public async createGame(params: RequestType<typeof api_connectFour_createGame_createGame>): Promise<ResponseType<typeof api_connectFour_createGame_createGame>> {
+            // Convert our params into the objects we need for the request
+            const headers = makeRecord<string, string>({
+                "x-namespace-slug": params.namespaceSlug,
+            })
+
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI(`/connectFour.createGame`, {headers, method: "POST", body: undefined})
+            return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_connectFour_createGame_createGame>
+        }
+
+        public async dropDisc(params: RequestType<typeof api_connectFour_dropDisc_dropDisc>): Promise<ResponseType<typeof api_connectFour_dropDisc_dropDisc>> {
+            // Convert our params into the objects we need for the request
+            const headers = makeRecord<string, string>({
+                "x-namespace-slug": params.namespaceSlug,
+            })
+
+            // Construct the body with only the fields which we want encoded within the body (excluding query string or header fields)
+            const body: Record<string, any> = {
+                column: params.column,
+                game:   params.game,
+                player: params.player,
+            }
+
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI(`/connectFour.dropDisc`, {headers, method: "POST", body: JSON.stringify(body)})
+            return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_connectFour_dropDisc_dropDisc>
+        }
+
+        public async getGame(params: RequestType<typeof api_connectFour_getGame_getGame>): Promise<ResponseType<typeof api_connectFour_getGame_getGame>> {
+            // Convert our params into the objects we need for the request
+            const headers = makeRecord<string, string>({
+                "x-namespace-slug": params.namespaceSlug,
+            })
+
+            // Construct the body with only the fields which we want encoded within the body (excluding query string or header fields)
+            const body: Record<string, any> = {
+                id: params.id,
+            }
+
+            // Now make the actual call to the API
+            const resp = await this.baseClient.callTypedAPI(`/connectFour.getGame`, {headers, method: "POST", body: JSON.stringify(body)})
+            return JSON.parse(await resp.text(), dateReviver) as ResponseType<typeof api_connectFour_getGame_getGame>
+        }
+    }
 }
 
 /**
