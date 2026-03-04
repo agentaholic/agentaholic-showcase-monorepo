@@ -4,6 +4,7 @@ import { useGame } from '~src/services/ticTacToe/hooks/useGame'
 import { useMakeMove } from '~src/services/ticTacToe/hooks/useMakeMove'
 import { GameBoard } from '~src/services/ticTacToe/components/GameBoard'
 import { GameStatusDisplay } from '~src/services/ticTacToe/components/GameStatusDisplay'
+import { ShareLink } from '~src/services/ticTacToe/components/ShareLink'
 
 const useCurrentPlayer = (): 'X' | 'O' => {
   const [searchParams] = useSearchParams()
@@ -25,6 +26,7 @@ const GameView = ({ gameId }: { gameId: string }) => {
   return (
     <div className="flex flex-col items-center gap-6">
       <GameStatusDisplay aggregate={aggregate} currentPlayer={currentPlayer} />
+      <ShareLink gameId={gameId} currentPlayer={currentPlayer} />
       <GameBoard
         aggregate={aggregate}
         currentPlayer={currentPlayer}
